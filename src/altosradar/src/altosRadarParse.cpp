@@ -20,13 +20,17 @@
 #include <visualization_msgs/Marker.h>
 using namespace std;
 #define widthSet 8000
-#define PORT 4040
 #define vrMax 60
 #define vrMin -60
 #define vStep 0.5
 #define errThr 3
 #define PI 3.1415926
 #define GROUPIP "224.1.2.4"
+#define GROUPPORT 4040
+#define LOCALIP "192.168.3.1"
+#define UNIPORT 4041
+#define UNIFLAG 1
+
 float rcsCal(float range, float azi, float snr, float* rcsBuf) {
     int ind = (azi * 180 / PI + 60.1) * 10;
     float rcs = powf32(range, 2.6) * snr / 5.0e6 / rcsBuf[ind];
@@ -49,25 +53,47 @@ int socketGen()
                sizeof(struct timeval));
     setsockopt(sockfd, SOL_SOCKET, SO_RCVTIMEO, (char*)&timeout,
                sizeof(struct timeval));
-
     memset(&addr, 0, sizeof(addr));
-    addr.sin_family = AF_INET;
-    addr.sin_port = htons(PORT);
-    addr.sin_addr.s_addr = INADDR_ANY;
-    int ret = bind(sockfd, (struct sockaddr*)&addr, sizeof(addr));
-    if (-1 == ret) {
-        perror("bind");
-        return 0;
+    if(UNIFLAG)
+    {
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(UNIPORT);
+        addr.sin_addr.s_addr = inet_addr(LOCALIP);
+        int ret = bind(sockfd, (struct sockaddr*)&addr, sizeof(addr));
+        if (-1 == ret) {
+            perror("bind");
+            return 0;
+        }
+    }else
+    {
+        addr.sin_family = AF_INET;
+        addr.sin_port = htons(GROUPPORT);
+        addr.sin_addr.s_addr = INADDR_ANY;
+        int ret = bind(sockfd, (struct sockaddr*)&addr, sizeof(addr));
+        if (-1 == ret) {
+            perror("bind");
+            return 0;
+        }
+
+        req.imr_multiaddr.s_addr = inet_addr(GROUPIP);
+        req.imr_interface.s_addr = inet_addr(LOCALIP);
+        ;
+        ret = setsockopt(sockfd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &req, sizeof(req));
+        if (ret < 0) {
+            perror("setsockopt");
+            return 0;
+        }
     }
 
-    req.imr_multiaddr.s_addr = inet_addr(GROUPIP);
-    req.imr_interface.s_addr = inet_addr(/*"0.0.0.0"*/ "192.168.3.1");
-    ;
-    ret = setsockopt(sockfd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &req, sizeof(req));
-    if (ret < 0) {
-        perror("setsockopt");
-        return 0;
-    }
+
+    // req.imr_multiaddr.s_addr = inet_addr(GROUPIP);
+    // req.imr_interface.s_addr = inet_addr(/*"0.0.0.0"*/ "192.168.3.1");
+    // ;
+    // ret = setsockopt(sockfd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &req, sizeof(req));
+    // if (ret < 0) {
+    //     perror("setsockopt");
+    //     return 0;
+    // }
     return sockfd;
 }
 
@@ -159,7 +185,6 @@ int main(int argc, char** argv) {
     struct sockaddr_in  from;
     socklen_t           len = sizeof(from);
     int                 sockfd = socketGen();
-    
     // pointcloud recv para
     vector<POINTCLOUD>  pointCloudVec;
     POINTCLOUD          pointCloudBuf;
