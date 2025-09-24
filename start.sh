@@ -1,6 +1,4 @@
 source devel/setup.bash
-gnome-terminal --tab -t "rviz" -e  'bash -c "roslaunch rviz.launch;read"'
-sleep 1s
-gnome-terminal --tab -t "altosradar" -e  'bash -c "rosrun altosradar altosRadarParse;read"'
-
-
+gnome-terminal -- bash -c "roslaunch rviz.launch;read"
+sleep 3s
+gnome-terminal -- bash -c "rosrun altosradar altosRadarParse $1 $2"
