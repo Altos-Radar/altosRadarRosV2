@@ -29,7 +29,7 @@ using namespace std;
 #define GROUPPORT 4040
 #define LOCALIP "192.168.3.1"
 #define UNIPORT 4041
-#define UNIFLAG 1
+#define UNIFLAG 0
 
 float rcsCal(float range, float azi, float snr, float* rcsBuf) {
     int ind = (azi * 180 / PI + 60.1) * 10;
@@ -84,16 +84,6 @@ int socketGen()
             return 0;
         }
     }
-
-
-    // req.imr_multiaddr.s_addr = inet_addr(GROUPIP);
-    // req.imr_interface.s_addr = inet_addr(/*"0.0.0.0"*/ "192.168.3.1");
-    // ;
-    // ret = setsockopt(sockfd, IPPROTO_IP, IP_ADD_MEMBERSHIP, &req, sizeof(req));
-    // if (ret < 0) {
-    //     perror("setsockopt");
-    //     return 0;
-    // }
     return sockfd;
 }
 
@@ -168,10 +158,6 @@ void calPoint(vector<POINTCLOUD> pointCloudVec,pcl::PointCloud<pcl::PointXYZHSV>
 }
 
 int main(int argc, char** argv) {
-    if(argc !=3)
-    {
-        printf("para cnt error!\n");
-    }
     // rcs read
     float* rcsBuf = (float*)malloc(1201 * sizeof(float));
     FILE* fp_rcs = fopen("data//rcs.dat", "rb");
@@ -185,7 +171,10 @@ int main(int argc, char** argv) {
     sensor_msgs::PointCloud2 output;
     pcl::PointCloud<pcl::PointXYZHSV>::Ptr cloud (new pcl::PointCloud<pcl::PointXYZHSV>);
 
-
+    // socket Gen
+    struct sockaddr_in  from;
+    socklen_t           len = sizeof(from);
+    int                 sockfd = socketGen();
     // pointcloud recv para
     vector<POINTCLOUD>  pointCloudVec;
     POINTCLOUD          pointCloudBuf;
@@ -203,52 +192,29 @@ int main(int argc, char** argv) {
     float*              histBuf = (float*)malloc(sizeof(float) * int((vrMax - vrMin) / vStep));
 
     // pointcloud record init
-    // char                filePath[1024];
-    // struct              timeval tv;
-    // struct              tm tm;
-    // gettimeofday(&tv, NULL);
-    // localtime_r(&tv.tv_sec, &tm);
-    // sprintf(filePath, "data//%d_%d_%d_%d_%d_%d_altos.dat", tm.tm_year + 1900,
-    //         tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
-    // FILE* fp = fopen(filePath, "wb");
-
-    FILE *fp = fopen(argv[2],"rb");
-    printf("%s\n",argv[2]);
-    if (NULL == fp)
-    {
-        printf("File not exit!\n");
-        sleep(3);
-        return -1; /* 要返回错误代码 */
-    }
+    char                filePath[1024];
+    struct              timeval tv;
+    struct              tm tm;
+    gettimeofday(&tv, NULL);
+    localtime_r(&tv.tv_sec, &tm);
+    sprintf(filePath, "data//%d_%d_%d_%d_%d_%d_altos.dat", tm.tm_year + 1900,
+            tm.tm_mon + 1, tm.tm_mday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+    FILE* fp = fopen(filePath, "wb");
 
     while(ros::ok())
     {
         memset(recvBuf,0,sizeof(POINTCLOUD));
-        int ret = fread(recvBuf,1368,1,fp);
-        // printf("ret = %d\n",ret);
-        // int ret = recvfrom(sockfd, recvBuf, sizeof(POINTCLOUD), 0, (struct sockaddr *)&from, &len);
+        int ret = recvfrom(sockfd, recvBuf, sizeof(POINTCLOUD), 0, (struct sockaddr *)&from, &len);
         if (ret > 0)
 		{
-            // fwrite(recvBuf, 1, ret, fp);
+            fwrite(recvBuf, 1, ret, fp);
             curObjInd = pointCloudBuf.pckHeader.curObjInd;
             mode = pointCloudBuf.pckHeader.mode;
             cntPointCloud[mode] = pointCloudBuf.pckHeader.objectCount;
             pointCloudVec.push_back(pointCloudBuf);
             if ((mode == 1 && (curObjInd + 1) * pointNumPerPack >= pointCloudBuf.pckHeader.objectCount)) {
-                // if (pointCloudVec.size() * pointNumPerPack < cntPointCloud[0] + cntPointCloud[1]) {
-                //     printf(
-                //         "FrameId %d %ld Loss %ld pack(s) in %d "
-                //         "packs------------------------\n",
-                //         pointCloudBuf.pckHeader.frameId, pointCloudVec.size(),
-                //         int(ceil(cntPointCloud[0] / pointNumPerPack) +
-                //             ceil(cntPointCloud[1] / pointNumPerPack)) -
-                //             pointCloudVec.size(),
-                //         int(ceil(cntPointCloud[0] / pointNumPerPack) +
-                //             ceil(cntPointCloud[1] / pointNumPerPack)));
-                // }
                 calPoint(pointCloudVec, cloud, installFlag, rcsBuf, vStep,
                          histBuf,pointNumPerPack);
-                ros::Duration(0.01).sleep();
                 pcl::toROSMsg(*cloud, output);
                 output.header.frame_id = "altosRadar";
                 printf("0 pointNum of %d frame: %d\n",
@@ -266,6 +232,7 @@ int main(int argc, char** argv) {
         }
     }
 
+    close(sockfd);
     free(histBuf);
     fclose(fp);
     return 0;
